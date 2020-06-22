@@ -1,9 +1,9 @@
-module Rollbar exposing
+module TrackJS exposing
     ( Rollbar, Level(..), Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
     , scoped, send
     )
 
-{-| Send reports to Rollbar.
+{-| Send reports to TrackJS.
 
 
 ## Types
@@ -24,7 +24,7 @@ import Json.Encode as Encode exposing (Value)
 import Murmur3
 import Process
 import Random
-import Rollbar.Internal
+import TrackJS.Internal
 import Task exposing (Task)
 import Time exposing (Posix)
 import Uuid exposing (Uuid, uuidGenerator)
@@ -59,7 +59,7 @@ type Level
 
 Create one using [`token`](#token).
 
-    Rollbar.token "12c99de67a444c229fca100e0967486f"
+    TrackJS.token "12c99de67a444c229fca100e0967486f"
 
 -}
 type Token
@@ -70,7 +70,7 @@ type Token
 
 Create one using [`scope`](#scope).
 
-    Rollbar.scope "login"
+    TrackJS.scope "login"
 
 -}
 type Scope
@@ -81,7 +81,7 @@ type Scope
 
 Create one using [`codeVersion`](#codeVersion).
 
-    Rollbar.codeVersion "24dcf3a9a9cf1a5e2ea319018644a68f4743a731"
+    TrackJS.codeVersion "24dcf3a9a9cf1a5e2ea319018644a68f4743a731"
 
 -}
 type CodeVersion
@@ -90,7 +90,7 @@ type CodeVersion
 
 {-| Create a [`Scope`](#Scope).
 
-    Rollbar.scope "login"
+    TrackJS.scope "login"
 
 -}
 scope : String -> Scope
@@ -100,7 +100,7 @@ scope =
 
 {-| Create a [`CodeVersion`](#CodeVersion).
 
-    Rollbar.codeVersion "24dcf3a9a9cf1a5e2ea319018644a68f4743a731"
+    TrackJS.codeVersion "24dcf3a9a9cf1a5e2ea319018644a68f4743a731"
 
 -}
 codeVersion : String -> CodeVersion
@@ -112,7 +112,7 @@ codeVersion =
 
 Create one using [`environment`](#environment).
 
-    Rollbar.environment "production"
+    TrackJS.environment "production"
 
 -}
 type Environment
@@ -121,7 +121,7 @@ type Environment
 
 {-| Create a [`Token`](#token)
 
-    Rollbar.token "12c99de67a444c229fca100e0967486f"
+    TrackJS.token "12c99de67a444c229fca100e0967486f"
 
 -}
 token : String -> Token
@@ -131,7 +131,7 @@ token =
 
 {-| Create an [`Environment`](#Environment)
 
-    Rollbar.environment "production"
+    TrackJS.environment "production"
 
 -}
 environment : String -> Environment
@@ -139,7 +139,7 @@ environment =
     Environment
 
 
-{-| Send a message to Rollbar. [`scoped`](#scoped)
+{-| Send a message to TrackJS. [`scoped`](#scoped)
 provides a nice wrapper around this.
 
 Arguments:
@@ -293,7 +293,7 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
             , ( "notifier"
               , Encode.object
                     [ ( "name", Encode.string "elm-rollbar" )
-                    , ( "version", Encode.string Rollbar.Internal.version )
+                    , ( "version", Encode.string TrackJS.Internal.version )
                     ]
               )
             , ( "level", Encode.string (levelToString level) )
@@ -326,7 +326,7 @@ tokenHeader (Token vtoken) =
 If the HTTP request to Rollbar fails because of an exceeded rate limit (status
 code 429), this will retry the HTTP request once per second, up to 60 times.
 
-    rollbar = Rollbar.scoped "Page/Home.elm"
+    rollbar = TrackJS.scoped "Page/Home.elm"
 
     rollbar.debug "Hitting the hats API." Dict.empty
 
