@@ -24,9 +24,9 @@ import Json.Encode as Encode exposing (Value)
 import Murmur3
 import Process
 import Random
-import TrackJS.Internal
 import Task exposing (Task)
 import Time exposing (Posix)
+import TrackJS.Internal
 import Uuid exposing (Uuid, uuidGenerator)
 
 
@@ -37,22 +37,22 @@ Create one using [`scoped`](#scoped).
 
 -}
 type alias Rollbar =
-    { critical : String -> Dict String Value -> Task Http.Error Uuid
-    , error : String -> Dict String Value -> Task Http.Error Uuid
+    { error : String -> Dict String Value -> Task Http.Error Uuid
     , warning : String -> Dict String Value -> Task Http.Error Uuid
     , info : String -> Dict String Value -> Task Http.Error Uuid
     , debug : String -> Dict String Value -> Task Http.Error Uuid
+    , log : String -> Dict String Value -> Task Http.Error Uuid
     }
 
 
 {-| Severity levels.
 -}
 type Level
-    = Critical
-    | Error
+    = Error
     | Warning
     | Info
     | Debug
+    | Log
 
 
 {-| A Rollbar API access token.
@@ -148,7 +148,7 @@ Arguments:
   - `Scope` - Scoping messages essentially namespaces them. For example, this might be the name of the page the user was on when the message was sent.
   - `Environment` - e.g. `"production"`, `"development"`, `"staging"`, etc.
   - `Int` - maximum retry attempts - if the response is that the message was rate limited, try resending again (once per second) up to this many times. (0 means "do not retry.")
-  - `Level` - severity, e.g. `Error`, `Warning`, `Debug`
+  - `Level` - severity, e.g. `Error`, `Warning`, `Info`
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
   - `Dict String Value` - arbitrary metadata, e.g. `{"username": "rtfeldman"}`
 
@@ -172,20 +172,20 @@ send vtoken vcodeVersion vscope venvironment maxRetryAttempts level message meta
 levelToString : Level -> String
 levelToString report =
     case report of
-        Critical ->
-            "critical"
+        Error ->
+            "error"
+
+        Warning ->
+            "warn"
 
         Debug ->
             "debug"
 
-        Error ->
-            "error"
-
         Info ->
             "info"
 
-        Warning ->
-            "warning"
+        Log ->
+            "info"
 
 
 sendWithTime : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String Value -> Posix -> Task Http.Error Uuid
@@ -341,11 +341,11 @@ scoped vtoken vcodeVersion venvironment scopeStr =
         vscope =
             Scope scopeStr
     in
-    { critical = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Critical
-    , error = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Error
+    { error = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Error
     , warning = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Warning
     , info = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Info
     , debug = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
+    , log = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
     }
 
 
