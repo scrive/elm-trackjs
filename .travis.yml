@@ -1,7 +1,0 @@
-addons:
-  apt:
-    packages:
-    - jq
-    - pcregrep
-script:
-  - scripts/verify-notifier-version.sh
