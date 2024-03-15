@@ -72,6 +72,8 @@ Create one using [`scope`](#scope).
 
     TrackJS.scope "login"
 
+TODO what does this map to in TrackJS?
+
 -}
 type Scope
     = Scope String
@@ -113,6 +115,8 @@ codeVersion =
 Create one using [`environment`](#environment).
 
     TrackJS.environment "production"
+
+TODO TrackJS only has applications? How does env work?
 
 -}
 type Environment
@@ -201,8 +205,8 @@ sendWithTime vtoken vcodeVersion vscope venvironment maxRetryAttempts level mess
             toJsonBody vtoken vscope vcodeVersion venvironment level message uuid metadata
     in
     { method = "POST"
-    , headers = [ tokenHeader vtoken ]
-    , url = endpointUrl
+    , headers = []
+    , url = endpointUrl -- TODO add `token` and `v={AGENT_VERSION}`
     , body = body
     , resolver = Http.stringResolver (\_ -> Ok ()) -- TODO
     , timeout = Nothing
@@ -277,6 +281,8 @@ uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message 
 toJsonBody : Token -> Scope -> CodeVersion -> Environment -> Level -> String -> Uuid -> Dict String Value -> Http.Body
 toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment venvironment) level message uuid metadata =
     -- See https://rollbar.com/docs/api/items_post/ for schema
+    -- TODO change schema to TrackJS
+    -- See https://docs.trackjs.com/data-api/capture/#request-payload for schema
     [ ( "access_token", Encode.string vtoken )
     , ( "data"
       , Encode.object
@@ -316,14 +322,10 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
         |> Http.jsonBody
 
 
-tokenHeader : Token -> Http.Header
-tokenHeader (Token vtoken) =
-    Http.header "X-Rollbar-Access-Token" vtoken
-
-
 {-| Return a [`Rollbar`](#Rollbar) record configured with the given
 [`Environment`](#Environment) and [`Scope`](#Scope) string.
 
+TODO: Get rid of rate limit? TrackJS does not seem to have it
 If the HTTP request to Rollbar fails because of an exceeded rate limit (status
 code 429), this will retry the HTTP request once per second, up to 60 times.
 
