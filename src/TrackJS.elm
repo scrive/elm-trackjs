@@ -1,5 +1,5 @@
 module TrackJS exposing
-    ( Rollbar, Level(..), Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
+    ( TrackJS, Level(..), Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
     , scoped, send
     )
 
@@ -8,7 +8,7 @@ module TrackJS exposing
 
 ## Types
 
-@docs Rollbar, Level, Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
+@docs TrackJS, Level, Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
 
 
 ## Types
@@ -36,7 +36,7 @@ separated by [`Level`](#Level).
 Create one using [`scoped`](#scoped).
 
 -}
-type alias Rollbar =
+type alias TrackJS =
     { error : String -> Dict String Value -> Task Http.Error Uuid
     , warning : String -> Dict String Value -> Task Http.Error Uuid
     , info : String -> Dict String Value -> Task Http.Error Uuid
@@ -55,7 +55,7 @@ type Level
     | Log
 
 
-{-| A Rollbar API access token.
+{-| A TrackJS token, get it from [the install page](https://my.trackjs.com/install).
 
 Create one using [`token`](#token).
 
@@ -144,7 +144,7 @@ provides a nice wrapper around this.
 
 Arguments:
 
-  - `Token` - The [Rollbar API token](https://rollbar.com/docs/api/#authentication) required to authenticate the request.
+  - `Token` - The [TrackJS token](https://docs.trackjs.com/data-api/capture/#token) required to identify your account.
   - `Scope` - Scoping messages essentially namespaces them. For example, this might be the name of the page the user was on when the message was sent.
   - `Environment` - e.g. `"production"`, `"development"`, `"staging"`, etc.
   - `Int` - maximum retry attempts - if the response is that the message was rate limited, try resending again (once per second) up to this many times. (0 means "do not retry.")
@@ -152,11 +152,12 @@ Arguments:
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
   - `Dict String Value` - arbitrary metadata, e.g. `{"username": "rtfeldman"}`
 
-If the message was successfully sent to Rollbar, the [`Task`](http://package.elm-lang.org/packages/elm-lang/core/latest/Task#Task)
+If the message was successfully sent to TrackJS, the [`Task`](http://package.elm-lang.org/packages/elm-lang/core/latest/Task#Task)
 succeeds with the [`Uuid`](http://package.elm-lang.org/packages/danyx23/elm-uuid/latest/Uuid#Uuid)
-it generated and sent to Rollbar to identify the message. Otherwise it fails
+it generated and sent to TrackJS to identify the message. Otherwise it fails
 with the [`Http.Error`](http://package.elm-lang.org/packages/elm-lang/http/latest/Http#Error)
-responsible.
+responsible (however note that [TrackJS always responds](https://docs.trackjs.com/data-api/capture/)
+with `200 OK` or `202 ACCEPTED`).
 
 -}
 send : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String Value -> Task Http.Error Uuid
@@ -178,14 +179,14 @@ levelToString report =
         Warning ->
             "warn"
 
-        Debug ->
-            "debug"
-
         Info ->
             "info"
 
+        Debug ->
+            "debug"
+
         Log ->
-            "info"
+            "log"
 
 
 sendWithTime : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String Value -> Posix -> Task Http.Error Uuid
@@ -335,7 +336,7 @@ code 429), this will retry the HTTP request once per second, up to 60 times.
         |> rollbar.error "Unexpected payload from the hats API."
 
 -}
-scoped : Token -> CodeVersion -> Environment -> String -> Rollbar
+scoped : Token -> CodeVersion -> Environment -> String -> TrackJS
 scoped vtoken vcodeVersion venvironment scopeStr =
     let
         vscope =
@@ -363,4 +364,4 @@ retries =
 
 endpointUrl : String
 endpointUrl =
-    "https://api.rollbar.com/api/1/item/"
+    "https://capture.trackjs.com/capture"
