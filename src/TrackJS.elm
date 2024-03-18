@@ -56,29 +56,31 @@ type alias TrackJS =
 {-| Return a [`TrackJS`](#TrackJS) record configured with the given
 [`Application`](#Application).
 
-TODO: Get rid of rate limit? TrackJS does not seem to have it
+Requests to TrackJS are subject to two limits:
 
-If the HTTP request to Rollbar fails because of an exceeded rate limit (status
-code 429), this will retry the HTTP request once per second, up to 60 times.
+1.  The total payload should be less than 100 kB
+2.  They should not exceed the [Capture Throttle](https://docs.trackjs.com/data-management/limits/#capture-throttle)
 
-FIXME: example
+Requests that are too large will result in `413 Payload Too Large` and this
+library does not prevent you from exceeding the limit or provide any mechanism
+to know if you are.
 
-    rollbar = TrackJS.scoped "Page/Home.elm"
+If you exceed the rate limit, these will show as "Dropped" in your
+[usage statistics](https://my.trackjs.com/usage), and will not error, so
+unfortuntaely we cannot reliably retry throttled requests.
+Please read the TrackJS documentation for more details.
 
-    rollbar.debug "Hitting the hats API." Dict.empty
-
-    [ ( "Payload", toString payload ) ]
-        |> Dict.fromList
-        |> rollbar.error "Unexpected payload from the hats API."
+  - FIXME: Can we do better re. 413 Payload Too Large?
+  - TODO: re-add example
 
 -}
 scoped : Token -> CodeVersion -> Application -> TrackJS
 scoped vtoken vcodeVersion vapplication =
-    { error = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Error
-    , warning = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Warning
-    , info = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Info
-    , debug = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Debug
-    , log = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Debug
+    { error = send vtoken vcodeVersion vapplication Error
+    , warning = send vtoken vcodeVersion vapplication Warning
+    , info = send vtoken vcodeVersion vapplication Info
+    , debug = send vtoken vcodeVersion vapplication Debug
+    , log = send vtoken vcodeVersion vapplication Debug
     }
 
 
@@ -129,6 +131,7 @@ codeVersion =
 Create one using [`application`](#application).
 
     TrackJS.application "my-application-name-production"
+
 -}
 type Application
     = Application String
@@ -141,6 +144,7 @@ want to separate environments (_e.g._ by application, using metadata, code
 version). This library leaves the choice up to you!
 
     TrackJS.application "my-application-name-production"
+
 -}
 application : String -> Application
 application =
@@ -155,7 +159,6 @@ Arguments:
   - `Token` - The [TrackJS token](https://docs.trackjs.com/data-api/capture/#token) required to identify your account.
   - `CodeVersion` - A version for your current application.
   - `Application` - Registered in [TrackJS](https://my.trackjs.com/Account/Applications)
-  - `Int` - maximum retry attempts - if the response is that the message was rate limited, try resending again (once per second) up to this many times. (0 means "do not retry.")
   - `Level` - severity, e.g. `Error`, `Warning`, `Info`
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
   - `Dict String String` - arbitrary metadata key-value pairs
@@ -168,10 +171,10 @@ responsible (however note that [TrackJS always responds](https://docs.trackjs.co
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Application -> Int -> Level -> String -> Dict String String -> Task Http.Error Uuid
-send vtoken vcodeVersion vapplication maxRetryAttempts level message metadata =
+send : Token -> CodeVersion -> Application -> Level -> String -> Dict String String -> Task Http.Error Uuid
+send vtoken vcodeVersion vapplication level message metadata =
     Time.now
-        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication maxRetryAttempts level message metadata)
+        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication level message metadata)
 
 
 {-| Severity levels.
@@ -207,8 +210,8 @@ levelToString report =
             "log"
 
 
-sendWithTime : Token -> CodeVersion -> Application -> Int -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
-sendWithTime (Token vtoken) vcodeVersion vapplication maxRetryAttempts level message metadata time =
+sendWithTime : Token -> CodeVersion -> Application -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
+sendWithTime (Token vtoken) vcodeVersion vapplication level message metadata time =
     let
         uuid : Uuid
         uuid =
@@ -233,32 +236,6 @@ sendWithTime (Token vtoken) vcodeVersion vapplication maxRetryAttempts level mes
     }
         |> Http.task
         |> Task.map (\() -> uuid)
-        |> withRetry maxRetryAttempts
-
-
-withRetry : Int -> Task Http.Error a -> Task Http.Error a
-withRetry maxRetryAttempts task =
-    let
-        retry : Http.Error -> Task Http.Error a
-        retry httpError =
-            if maxRetryAttempts > 0 then
-                case httpError of
-                    Http.BadStatus statusCode ->
-                        if statusCode == 429 then
-                            -- Wait a bit between retries.
-                            Process.sleep (Time.posixToMillis retries.msDelayBetweenRetries |> toFloat)
-                                |> Task.andThen (\() -> withRetry (maxRetryAttempts - 1) task)
-
-                        else
-                            Task.fail httpError
-
-                    _ ->
-                        Task.fail httpError
-
-            else
-                Task.fail httpError
-    in
-    Task.onError retry task
 
 
 {-| Using the current system time as a random number seed generator, generate a
@@ -326,7 +303,7 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
     , ( "customer"
       , Encode.object
             -- Application key. Generated this in your TrackJS Dashboard. {String}
-            [ ( "application", Encode.string vapplication)
+            [ ( "application", Encode.string vapplication )
 
             -- Auto-generated ID for matching visitor to multiple errors. {String}
             -- FIXME seems like this should not be the error UUID but per user session
@@ -379,15 +356,3 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
     ]
         |> Encode.object
         |> Http.jsonBody
-
-
-{-| According to <https://rollbar.com/docs/rate-limits/>
-the default rate limit for all access tokens is 5,000 calls per minute.
-This window resets every minute, so retry after waiting 1 sec, and default to
-retrying up to 60 times.
--}
-retries : { defaultMaxAttempts : Int, msDelayBetweenRetries : Posix }
-retries =
-    { defaultMaxAttempts = 60
-    , msDelayBetweenRetries = Time.millisToPosix 1000
-    }
