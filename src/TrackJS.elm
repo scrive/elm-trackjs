@@ -1,19 +1,25 @@
 module TrackJS exposing
-    ( TrackJS, Level(..), Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
-    , scoped, send
+    ( TrackJS, scoped
+    , Token, token, CodeVersion, codeVersion, Application, application
+    , send, Level(..)
     )
 
 {-| Send reports to TrackJS.
 
 
-## Types
+## Send reports
 
-@docs TrackJS, Level, Token, token, Environment, environment, Scope, scope, CodeVersion, codeVersion
+@docs TrackJS, scoped
 
 
-## Types
+### Types
 
-@docs scoped, send
+@docs Token, token, CodeVersion, codeVersion, Application, application
+
+
+## Low-level
+
+@docs send, Level
 
 -}
 
@@ -32,8 +38,8 @@ import Url.Builder
 import Uuid exposing (Uuid, uuidGenerator)
 
 
-{-| Functions preapplied with access tokens, scopes, and environments,
-separated by [`Level`](#Level).
+{-| Functions preapplied with access token and application, separated by
+[`Level`](#Level).
 
 Create one using [`scoped`](#scoped).
 
@@ -47,14 +53,33 @@ type alias TrackJS =
     }
 
 
-{-| Severity levels.
+{-| Return a [`TrackJS`](#TrackJS) record configured with the given
+[`Application`](#Application).
+
+TODO: Get rid of rate limit? TrackJS does not seem to have it
+
+If the HTTP request to Rollbar fails because of an exceeded rate limit (status
+code 429), this will retry the HTTP request once per second, up to 60 times.
+
+FIXME: example
+
+    rollbar = TrackJS.scoped "Page/Home.elm"
+
+    rollbar.debug "Hitting the hats API." Dict.empty
+
+    [ ( "Payload", toString payload ) ]
+        |> Dict.fromList
+        |> rollbar.error "Unexpected payload from the hats API."
+
 -}
-type Level
-    = Error
-    | Warning
-    | Info
-    | Debug
-    | Log
+scoped : Token -> CodeVersion -> Application -> TrackJS
+scoped vtoken vcodeVersion vapplication =
+    { error = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Error
+    , warning = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Warning
+    , info = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Info
+    , debug = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Debug
+    , log = send vtoken vcodeVersion vapplication retries.defaultMaxAttempts Debug
+    }
 
 
 {-| A TrackJS token, get it from [the install page](https://my.trackjs.com/install).
@@ -68,17 +93,14 @@ type Token
     = Token String
 
 
-{-| A scope, for example `"login"`.
+{-| Create a [`Token`](#token)
 
-Create one using [`scope`](#scope).
-
-    TrackJS.scope "login"
-
-TODO what does this map to in TrackJS?
+    TrackJS.token "12c99de67a444c229fca100e0967486f"
 
 -}
-type Scope
-    = Scope String
+token : String -> Token
+token =
+    Token
 
 
 {-| A code version, for example - a git commit hash.
@@ -92,16 +114,6 @@ type CodeVersion
     = CodeVersion String
 
 
-{-| Create a [`Scope`](#Scope).
-
-    TrackJS.scope "login"
-
--}
-scope : String -> Scope
-scope =
-    Scope
-
-
 {-| Create a [`CodeVersion`](#CodeVersion).
 
     TrackJS.codeVersion "24dcf3a9a9cf1a5e2ea319018644a68f4743a731"
@@ -112,67 +124,27 @@ codeVersion =
     CodeVersion
 
 
-{-| For example, "production", "development", or "staging".
+{-| A TrackJS application created [in your settings page](https://my.trackjs.com/Account/Applications).
 
-Create one using [`environment`](#environment).
+Create one using [`application`](#application).
 
-    TrackJS.environment "production"
-
-TODO TrackJS only has applications? How does env work?
-
+    TrackJS.application "my-application-name-production"
 -}
-type Environment
-    = Environment String
+type Application
+    = Application String
 
 
-{-| Create a [`Token`](#token)
+{-| Create a [`Application`](#Application).
 
-    TrackJS.token "12c99de67a444c229fca100e0967486f"
+As TrackJS does not have the concept of environments, you should choose how you
+want to separate environments (_e.g._ by application, using metadata, code
+version). This library leaves the choice up to you!
 
+    TrackJS.application "my-application-name-production"
 -}
-token : String -> Token
-token =
-    Token
-
-
-{-| Create an [`Environment`](#Environment)
-
-    TrackJS.environment "production"
-
--}
-environment : String -> Environment
-environment =
-    Environment
-
-
-{-| Return a [`Rollbar`](#Rollbar) record configured with the given
-[`Environment`](#Environment) and [`Scope`](#Scope) string.
-
-TODO: Get rid of rate limit? TrackJS does not seem to have it
-If the HTTP request to Rollbar fails because of an exceeded rate limit (status
-code 429), this will retry the HTTP request once per second, up to 60 times.
-
-    rollbar = TrackJS.scoped "Page/Home.elm"
-
-    rollbar.debug "Hitting the hats API." Dict.empty
-
-    [ ( "Payload", toString payload ) ]
-        |> Dict.fromList
-        |> rollbar.error "Unexpected payload from the hats API."
-
--}
-scoped : Token -> CodeVersion -> Environment -> String -> TrackJS
-scoped vtoken vcodeVersion venvironment scopeStr =
-    let
-        vscope =
-            Scope scopeStr
-    in
-    { error = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Error
-    , warning = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Warning
-    , info = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Info
-    , debug = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
-    , log = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
-    }
+application : String -> Application
+application =
+    Application
 
 
 {-| Send a message to TrackJS. [`scoped`](#scoped)
@@ -181,8 +153,8 @@ provides a nice wrapper around this.
 Arguments:
 
   - `Token` - The [TrackJS token](https://docs.trackjs.com/data-api/capture/#token) required to identify your account.
-  - `Scope` - Scoping messages essentially namespaces them. For example, this might be the name of the page the user was on when the message was sent.
-  - `Environment` - e.g. `"production"`, `"development"`, `"staging"`, etc.
+  - `CodeVersion` - A version for your current application.
+  - `Application` - Registered in [TrackJS](https://my.trackjs.com/Account/Applications)
   - `Int` - maximum retry attempts - if the response is that the message was rate limited, try resending again (once per second) up to this many times. (0 means "do not retry.")
   - `Level` - severity, e.g. `Error`, `Warning`, `Info`
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
@@ -196,10 +168,20 @@ responsible (however note that [TrackJS always responds](https://docs.trackjs.co
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String String -> Task Http.Error Uuid
-send vtoken vcodeVersion vscope venvironment maxRetryAttempts level message metadata =
+send : Token -> CodeVersion -> Application -> Int -> Level -> String -> Dict String String -> Task Http.Error Uuid
+send vtoken vcodeVersion vapplication maxRetryAttempts level message metadata =
     Time.now
-        |> Task.andThen (sendWithTime vtoken vcodeVersion vscope venvironment maxRetryAttempts level message metadata)
+        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication maxRetryAttempts level message metadata)
+
+
+{-| Severity levels.
+-}
+type Level
+    = Error
+    | Warning
+    | Info
+    | Debug
+    | Log
 
 
 
@@ -225,16 +207,16 @@ levelToString report =
             "log"
 
 
-sendWithTime : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
-sendWithTime (Token vtoken) vcodeVersion vscope venvironment maxRetryAttempts level message metadata time =
+sendWithTime : Token -> CodeVersion -> Application -> Int -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
+sendWithTime (Token vtoken) vcodeVersion vapplication maxRetryAttempts level message metadata time =
     let
         uuid : Uuid
         uuid =
-            uuidFrom (Token vtoken) vscope venvironment level message metadata time
+            uuidFrom (Token vtoken) vapplication level message metadata time
 
         body : Http.Body
         body =
-            toJsonBody (Token vtoken) vscope vcodeVersion venvironment level message uuid metadata time
+            toJsonBody (Token vtoken) vcodeVersion vapplication level message uuid metadata time
     in
     -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
@@ -289,8 +271,8 @@ only way we could expect the same UUID is if we were sending a duplicate
 message.
 
 -}
-uuidFrom : Token -> Scope -> Environment -> Level -> String -> Dict String String -> Posix -> Uuid
-uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message metadata time =
+uuidFrom : Token -> Application -> Level -> String -> Dict String String -> Posix -> Uuid
+uuidFrom (Token vtoken) (Application vapplication) level message metadata time =
     let
         ms =
             Time.posixToMillis time
@@ -300,8 +282,7 @@ uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message 
             [ Encode.string (levelToString level)
             , Encode.string message
             , Encode.string vtoken
-            , Encode.string vscope
-            , Encode.string venvironment
+            , Encode.string vapplication
 
             -- FIXME update to work: , Encode.dict identity identity metadata
             ]
@@ -319,9 +300,8 @@ uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message 
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> Scope -> CodeVersion -> Environment -> Level -> String -> Uuid -> Dict String String -> Posix -> Http.Body
-toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment venvironment) level message uuid metadata time =
-    -- TODO or FIXME use: vscope, venvironment
+toJsonBody : Token -> CodeVersion -> Application -> Level -> String -> Uuid -> Dict String String -> Posix -> Http.Body
+toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) level message uuid metadata time =
     -- The source platform of the capture. Typically "browser" or "node". {String}
     [ ( "agentPlatform", Encode.string "browser-elm" )
 
@@ -346,7 +326,7 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
     , ( "customer"
       , Encode.object
             -- Application key. Generated this in your TrackJS Dashboard. {String}
-            [ ( "application", Debug.todo "TODO: application name" )
+            [ ( "application", Encode.string vapplication)
 
             -- Auto-generated ID for matching visitor to multiple errors. {String}
             -- FIXME seems like this should not be the error UUID but per user session
