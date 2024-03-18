@@ -27,6 +27,7 @@ import Random
 import Task exposing (Task)
 import Time exposing (Posix)
 import TrackJS.Internal
+import Url.Builder
 import Uuid exposing (Uuid, uuidGenerator)
 
 
@@ -194,19 +195,25 @@ levelToString report =
 
 
 sendWithTime : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
-sendWithTime vtoken vcodeVersion vscope venvironment maxRetryAttempts level message metadata time =
+sendWithTime (Token vtoken) vcodeVersion vscope venvironment maxRetryAttempts level message metadata time =
     let
         uuid : Uuid
         uuid =
-            uuidFrom vtoken vscope venvironment level message metadata time
+            uuidFrom (Token vtoken) vscope venvironment level message metadata time
 
         body : Http.Body
         body =
-            toJsonBody vtoken vscope vcodeVersion venvironment level message uuid metadata
+            toJsonBody (Token vtoken) vscope vcodeVersion venvironment level message uuid metadata
     in
+    -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
     , headers = []
-    , url = endpointUrl -- TODO add `token` and `v={AGENT_VERSION}`
+    , url =
+        Url.Builder.crossOrigin "https://capture.trackjs.com"
+            [ "capture" ]
+            [ Url.Builder.string "token" vtoken
+            , Url.Builder.string "v" TrackJS.Internal.version
+            ]
     , body = body
     , resolver = Http.stringResolver (\_ -> Ok ()) -- TODO
     , timeout = Nothing
@@ -401,8 +408,3 @@ retries =
     { defaultMaxAttempts = 60
     , msDelayBetweenRetries = Time.millisToPosix 1000
     }
-
-
-endpointUrl : String
-endpointUrl =
-    "https://capture.trackjs.com/capture"
