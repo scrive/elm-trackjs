@@ -20,6 +20,7 @@ module TrackJS exposing
 import Bitwise
 import Dict exposing (Dict)
 import Http
+import Iso8601
 import Json.Encode as Encode exposing (Value)
 import Murmur3
 import Process
@@ -233,7 +234,7 @@ sendWithTime (Token vtoken) vcodeVersion vscope venvironment maxRetryAttempts le
 
         body : Http.Body
         body =
-            toJsonBody (Token vtoken) vscope vcodeVersion venvironment level message uuid metadata
+            toJsonBody (Token vtoken) vscope vcodeVersion venvironment level message uuid metadata time
     in
     -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
@@ -318,9 +319,9 @@ uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message 
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> Scope -> CodeVersion -> Environment -> Level -> String -> Uuid -> Dict String String -> Http.Body
-toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment venvironment) level message uuid metadata =
-    -- TODO or FIXME use: vscope, venvironment, metadata
+toJsonBody : Token -> Scope -> CodeVersion -> Environment -> Level -> String -> Uuid -> Dict String String -> Posix -> Http.Body
+toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment venvironment) level message uuid metadata time =
+    -- TODO or FIXME use: vscope, venvironment
     -- The source platform of the capture. Typically "browser" or "node". {String}
     [ ( "agentPlatform", Encode.string "browser-elm" )
 
@@ -333,12 +334,13 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
     , ( "console"
       , Encode.object
             -- Formatted console message string. {String}
-            -- TODO message req?
+            [ ( "message", Encode.string message )
+
             -- Severity of the console event. {String:"log","debug","info","warn","error"}
-            [ ( "severity", Encode.string (levelToString level) )
+            , ( "severity", Encode.string (levelToString level) )
 
             -- Timestamp of the console event. {String ISO 8601}
-            -- TODO timestamp req?
+            , ( "timestamp", Iso8601.encode time )
             ]
       )
     , ( "customer"
@@ -365,7 +367,7 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
     -- Entry point of the error. {String:"ajax","direct","catch","console","window"}
     , ( "entry", Encode.string "direct" )
 
-    -- TODO environment?
+    -- SKIPPED: environment
     -- SKIPPED: file: Filename originating the error. {String filename}
     -- Error message. {String}
     , ( "message", Encode.string message )
@@ -387,11 +389,12 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
     -- SKIPPED: nav: Navigation Telemetry events. {Array[Object]}
     -- SKIPPED: network: Network Telemetry events. {Array[Object]}
     -- URL of the document when the error occurred. {String URL}
-    -- TODO url?
+    -- SKIPPED: url: URL of the document when the error occurred. {String URL}
     -- SKIPPED: stack: Stack trace of the error. {String}
     -- SKIPPED: throttled: Number of errors that have been dropped by the agent throttles before this one. {Number}
     -- Timestamp when the error occurred. {String ISO 8601}
-    -- TODO timestamp
+    , ( "timestamp", Iso8601.encode time )
+
     -- SKIPPED: visitor: Visitor Telemetry events. {Array[Object]}
     ]
         |> Encode.object
