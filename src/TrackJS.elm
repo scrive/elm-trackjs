@@ -37,11 +37,11 @@ Create one using [`scoped`](#scoped).
 
 -}
 type alias TrackJS =
-    { error : String -> Dict String Value -> Task Http.Error Uuid
-    , warning : String -> Dict String Value -> Task Http.Error Uuid
-    , info : String -> Dict String Value -> Task Http.Error Uuid
-    , debug : String -> Dict String Value -> Task Http.Error Uuid
-    , log : String -> Dict String Value -> Task Http.Error Uuid
+    { error : String -> Dict String String -> Task Http.Error Uuid
+    , warning : String -> Dict String String -> Task Http.Error Uuid
+    , info : String -> Dict String String -> Task Http.Error Uuid
+    , debug : String -> Dict String String -> Task Http.Error Uuid
+    , log : String -> Dict String String -> Task Http.Error Uuid
     }
 
 
@@ -154,7 +154,7 @@ Arguments:
   - `Int` - maximum retry attempts - if the response is that the message was rate limited, try resending again (once per second) up to this many times. (0 means "do not retry.")
   - `Level` - severity, e.g. `Error`, `Warning`, `Info`
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
-  - `Dict String Value` - arbitrary metadata, e.g. `{"username": "rtfeldman"}`
+  - `Dict String String` - arbitrary metadata key-value pairs
 
 If the message was successfully sent to TrackJS, the [`Task`](http://package.elm-lang.org/packages/elm-lang/core/latest/Task#Task)
 succeeds with the [`Uuid`](http://package.elm-lang.org/packages/danyx23/elm-uuid/latest/Uuid#Uuid)
@@ -164,7 +164,7 @@ responsible (however note that [TrackJS always responds](https://docs.trackjs.co
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String Value -> Task Http.Error Uuid
+send : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String String -> Task Http.Error Uuid
 send vtoken vcodeVersion vscope venvironment maxRetryAttempts level message metadata =
     Time.now
         |> Task.andThen (sendWithTime vtoken vcodeVersion vscope venvironment maxRetryAttempts level message metadata)
@@ -193,7 +193,7 @@ levelToString report =
             "log"
 
 
-sendWithTime : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String Value -> Posix -> Task Http.Error Uuid
+sendWithTime : Token -> CodeVersion -> Scope -> Environment -> Int -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
 sendWithTime vtoken vcodeVersion vscope venvironment maxRetryAttempts level message metadata time =
     let
         uuid : Uuid
@@ -251,7 +251,7 @@ only way we could expect the same UUID is if we were sending a duplicate
 message.
 
 -}
-uuidFrom : Token -> Scope -> Environment -> Level -> String -> Dict String Value -> Posix -> Uuid
+uuidFrom : Token -> Scope -> Environment -> Level -> String -> Dict String String -> Posix -> Uuid
 uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message metadata time =
     let
         ms =
@@ -264,7 +264,8 @@ uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message 
             , Encode.string vtoken
             , Encode.string vscope
             , Encode.string venvironment
-            , Encode.dict identity identity metadata
+
+            -- FIXME update to work: , Encode.dict identity identity metadata
             ]
                 |> Encode.list identity
                 |> Encode.encode 0
@@ -280,7 +281,7 @@ uuidFrom (Token vtoken) (Scope vscope) (Environment venvironment) level message 
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> Scope -> CodeVersion -> Environment -> Level -> String -> Uuid -> Dict String Value -> Http.Body
+toJsonBody : Token -> Scope -> CodeVersion -> Environment -> Level -> String -> Uuid -> Dict String String -> Http.Body
 toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment venvironment) level message uuid metadata =
     -- TODO or FIXME use: vscope, venvironment, metadata
     -- The source platform of the capture. Typically "browser" or "node". {String}
@@ -333,7 +334,19 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
     , ( "message", Encode.string message )
 
     -- Customer-provided metadata keys describing the current context. {Array[Object]}
-    -- TODO metadata
+    , ( "metadata"
+        -- key: Metadata key. {String}
+        -- value: Metadata value. {String}
+      , Dict.toList metadata
+            |> Encode.list
+                (\( k, v ) ->
+                    Encode.object
+                        [ ( "key", Encode.string k )
+                        , ( "value", Encode.string v )
+                        ]
+                )
+      )
+
     -- SKIPPED: nav: Navigation Telemetry events. {Array[Object]}
     -- SKIPPED: network: Network Telemetry events. {Array[Object]}
     -- URL of the document when the error occurred. {String URL}
