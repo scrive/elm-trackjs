@@ -144,6 +144,36 @@ environment =
     Environment
 
 
+{-| Return a [`Rollbar`](#Rollbar) record configured with the given
+[`Environment`](#Environment) and [`Scope`](#Scope) string.
+
+TODO: Get rid of rate limit? TrackJS does not seem to have it
+If the HTTP request to Rollbar fails because of an exceeded rate limit (status
+code 429), this will retry the HTTP request once per second, up to 60 times.
+
+    rollbar = TrackJS.scoped "Page/Home.elm"
+
+    rollbar.debug "Hitting the hats API." Dict.empty
+
+    [ ( "Payload", toString payload ) ]
+        |> Dict.fromList
+        |> rollbar.error "Unexpected payload from the hats API."
+
+-}
+scoped : Token -> CodeVersion -> Environment -> String -> TrackJS
+scoped vtoken vcodeVersion venvironment scopeStr =
+    let
+        vscope =
+            Scope scopeStr
+    in
+    { error = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Error
+    , warning = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Warning
+    , info = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Info
+    , debug = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
+    , log = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
+    }
+
+
 {-| Send a message to TrackJS. [`scoped`](#scoped)
 provides a nice wrapper around this.
 
@@ -366,36 +396,6 @@ toJsonBody (Token vtoken) (Scope vscope) (CodeVersion vcodeVersion) (Environment
     ]
         |> Encode.object
         |> Http.jsonBody
-
-
-{-| Return a [`Rollbar`](#Rollbar) record configured with the given
-[`Environment`](#Environment) and [`Scope`](#Scope) string.
-
-TODO: Get rid of rate limit? TrackJS does not seem to have it
-If the HTTP request to Rollbar fails because of an exceeded rate limit (status
-code 429), this will retry the HTTP request once per second, up to 60 times.
-
-    rollbar = TrackJS.scoped "Page/Home.elm"
-
-    rollbar.debug "Hitting the hats API." Dict.empty
-
-    [ ( "Payload", toString payload ) ]
-        |> Dict.fromList
-        |> rollbar.error "Unexpected payload from the hats API."
-
--}
-scoped : Token -> CodeVersion -> Environment -> String -> TrackJS
-scoped vtoken vcodeVersion venvironment scopeStr =
-    let
-        vscope =
-            Scope scopeStr
-    in
-    { error = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Error
-    , warning = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Warning
-    , info = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Info
-    , debug = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
-    , log = send vtoken vcodeVersion vscope venvironment retries.defaultMaxAttempts Debug
-    }
 
 
 {-| According to <https://rollbar.com/docs/rate-limits/>
