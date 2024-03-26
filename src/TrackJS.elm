@@ -1,6 +1,8 @@
 module TrackJS exposing
-    ( TrackJS, scoped
-    , Token, token, CodeVersion, codeVersion, Application, application
+    ( TrackJS, reporter, Report
+    , Token, token
+    , CodeVersion, codeVersion
+    , Application, application
     , Context, emptyContext
     , send
     )
@@ -10,12 +12,14 @@ module TrackJS exposing
 
 ## Send reports
 
-@docs TrackJS, scoped
+@docs TrackJS, reporter, Report
 
 
 ### Types
 
-@docs Token, token, CodeVersion, codeVersion, Application, application
+@docs Token, token
+@docs CodeVersion, codeVersion
+@docs Application, application
 @docs Context, emptyContext
 
 
@@ -43,11 +47,11 @@ import Uuid exposing (Uuid, uuidGenerator)
 
 {-| Pre-applied function with access token and application
 
-Create one using [`scoped`](#scoped).
+Create one using [`reporter`](#reporter).
 
 -}
 type alias TrackJS =
-    { report : String -> Dict String String -> Task Http.Error Uuid
+    { report : Report -> Dict String String -> Task Http.Error Uuid
     }
 
 
@@ -68,13 +72,12 @@ If you exceed the rate limit, these will show as "Dropped" in your
 unfortuntaely we cannot reliably retry throttled requests.
 Please read the TrackJS documentation for more details.
 
-  - TODO: `scoped` suggests a Scope! Either rename or add it!
   - FIXME: Can we do better re. 413 Payload Too Large?
   - TODO: re-add example
 
 -}
-scoped : Token -> CodeVersion -> Application -> Context -> TrackJS
-scoped vtoken vcodeVersion vapplication context =
+reporter : Token -> CodeVersion -> Application -> Context -> TrackJS
+reporter vtoken vcodeVersion vapplication context =
     { report = send vtoken vcodeVersion vapplication context
     }
 
@@ -190,8 +193,25 @@ emptyContext =
     }
 
 
-{-| Send a message to TrackJS. [`scoped`](#scoped)
-provides a nice wrapper around this.
+{-| An error report with information about the current state of the application.
+
+  - `message` is the headline error message
+  - `url` does not need to be a valid URL but must be percent-encoded, you can
+    either use the full current URL of your application, or something that will
+    help you identify where in your application the report was generated
+  - `stackTrace` can be used to provide arbitrary additional information, such as a JSON
+    decoding error string (keep the size limit in mind)
+
+-}
+type alias Report =
+    { message : String
+    , url : String
+    , stackTrace : Maybe String
+    }
+
+
+{-| Send a message to TrackJS.
+[`reporter`](#reporter) provides a nice wrapper around this.
 
 Arguments:
 
@@ -199,6 +219,7 @@ Arguments:
   - `CodeVersion` - A version for your current application.
   - `Application` - Registered in [TrackJS](https://my.trackjs.com/Account/Applications)
   - `Context` - TODO documentation
+  - `Report` - TODO documentation
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
   - `Dict String String` - arbitrary metadata key-value pairs
 
@@ -210,22 +231,22 @@ responsible (however note that [TrackJS always responds](https://docs.trackjs.co
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Application -> Context -> String -> Dict String String -> Task Http.Error Uuid
-send vtoken vcodeVersion vapplication context message metadata =
+send : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Task Http.Error Uuid
+send vtoken vcodeVersion vapplication context report metadata =
     Time.now
-        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication context message metadata)
+        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication context report metadata)
 
 
-sendWithTime : Token -> CodeVersion -> Application -> Context -> String -> Dict String String -> Posix -> Task Http.Error Uuid
-sendWithTime (Token vtoken) vcodeVersion vapplication context message metadata time =
+sendWithTime : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Posix -> Task Http.Error Uuid
+sendWithTime (Token vtoken) vcodeVersion vapplication context report metadata time =
     let
         uuid : Uuid
         uuid =
-            uuidFrom (Token vtoken) vapplication message metadata time
+            uuidFrom (Token vtoken) vapplication report.message metadata time
 
         body : Http.Body
         body =
-            toJsonBody (Token vtoken) vcodeVersion vapplication context message uuid metadata time
+            toJsonBody (Token vtoken) vcodeVersion vapplication context report uuid metadata time
     in
     -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
@@ -281,8 +302,8 @@ uuidFrom (Token vtoken) (Application vapplication) message metadata time =
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> CodeVersion -> Application -> Context -> String -> Uuid -> Dict String String -> Posix -> Http.Body
-toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context message uuid metadata time =
+toJsonBody : Token -> CodeVersion -> Application -> Context -> Report -> Uuid -> Dict String String -> Posix -> Http.Body
+toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context report uuid metadata time =
     -- The source platform of the capture. Typically "browser" or "node". {String}
     [ ( "agentPlatform", Encode.string "browser-elm" )
 
@@ -360,7 +381,7 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
 
     -- SKIPPED: file: Filename originating the error. {String filename}
     -- Error message. {String}
-    , ( "message", Encode.string message )
+    , ( "message", Encode.string report.message )
 
     -- Customer-provided metadata keys describing the current context. {Array[Object]}
     , ( "metadata"
@@ -382,13 +403,11 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
     -- SKIPPED: Network Telemetry events. {Array[Object]}
     , ( "network", Encode.list (always Encode.null) [] )
 
-    -- SKIPPED: URL of the document when the error occurred. {String URL}
-    -- TODO include some info via Scope?
-    , ( "url", Encode.string <| Url.percentEncode "TODO include something useful" )
+    -- URL of the document when the error occurred. {String URL}
+    , ( "url", Encode.string report.url )
 
-    -- SKIPPED: Stack trace of the error. {String}
-    -- TODO include some info via Scope?
-    , ( "stack", Encode.string "TODO include something useful" )
+    -- Stack trace of the error. {String}
+    , ( "stack", Encode.string <| Maybe.withDefault "" report.stackTrace )
 
     -- SKIPPED: throttled: Number of errors that have been dropped by the agent throttles before this one. {Number}
     , ( "throttled", Encode.int 0 )

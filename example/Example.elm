@@ -18,7 +18,7 @@ token =
 
 trackJs : TrackJS
 trackJs =
-    TrackJS.scoped
+    TrackJS.reporter
         (TrackJS.token token)
         (TrackJS.codeVersion "0.0.1")
         (TrackJS.application "elm-trackjs-example")
@@ -65,7 +65,11 @@ update msg model =
 
 report : String -> Cmd Msg
 report message =
-    Task.attempt (\_ -> NoOp) (trackJs.report message (Dict.singleton "eg-key" "eg-value"))
+    Task.attempt (\_ -> NoOp)
+        (trackJs.report
+            { message = message, url = "elm-trackjs-example/home", stackTrace = Nothing }
+            (Dict.singleton "eg-key" "eg-value")
+        )
 
 
 

@@ -8,7 +8,7 @@ TODOs:
 - [x] Test that it works!
 - [x] Add optional `Context` to include useful things
 - [x] Get rid of console and levels: does not seem very useful for TrackJS
-- [ ] Add `Scope` to include `url` and "stack trace", anything else?
+- [x] Add `Scope` to include `url` and "stack trace", anything else?
 - [ ] Figure out what to include in `customer` data, in particular, the various `id`s
 - [ ] Add test for version staying in sync
 - [ ] Finish and check documentation
