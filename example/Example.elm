@@ -6,6 +6,7 @@ import Html exposing (..)
 import Html.Attributes exposing (value)
 import Html.Events exposing (onClick, onInput)
 import Task
+import Time
 import TrackJS exposing (TrackJS)
 
 
@@ -16,13 +17,17 @@ token =
     Debug.todo "00000000000000000000000000000000"
 
 
-trackJs : TrackJS
-trackJs =
+trackJsWithStartTime : Maybe Time.Posix -> TrackJS
+trackJsWithStartTime time =
+    let
+        context =
+            TrackJS.emptyContext
+    in
     TrackJS.reporter
         (TrackJS.token token)
         (TrackJS.codeVersion "0.0.1")
         (TrackJS.application "elm-trackjs-example")
-        TrackJS.emptyContext
+        { context | startTime = time }
 
 
 
@@ -31,12 +36,14 @@ trackJs =
 
 type alias Model =
     { report : String
+    , trackJS : TrackJS
     }
 
 
 initialModel : Model
 initialModel =
     { report = "Example report"
+    , trackJS = trackJsWithStartTime Nothing
     }
 
 
@@ -45,28 +52,32 @@ initialModel =
 
 
 type Msg
-    = SetText String
-    | NoOp
+    = StartTime Time.Posix
+    | SetText String
     | Send
+    | NoOp
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        NoOp ->
-            ( model, Cmd.none )
+        StartTime time ->
+            ( { model | trackJS = trackJsWithStartTime (Just time) }, Cmd.none )
 
         SetText text ->
             ( { model | report = text }, Cmd.none )
 
         Send ->
-            ( model, report model.report )
+            ( model, report model.trackJS model.report )
+
+        NoOp ->
+            ( model, Cmd.none )
 
 
-report : String -> Cmd Msg
-report message =
+report : TrackJS -> String -> Cmd Msg
+report trackJS message =
     Task.attempt (\_ -> NoOp)
-        (trackJs.report
+        (trackJS.report
             { message = message, url = "elm-trackjs-example/home", stackTrace = Nothing }
             (Dict.singleton "eg-key" "eg-value")
         )
@@ -98,6 +109,6 @@ main =
         }
 
 
-init : ( Model, Cmd msg )
+init : ( Model, Cmd Msg )
 init =
-    ( initialModel, Cmd.none )
+    ( initialModel, Task.perform StartTime Time.now )
