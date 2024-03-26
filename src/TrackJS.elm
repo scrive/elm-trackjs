@@ -260,8 +260,7 @@ uuidFrom (Token vtoken) (Application vapplication) level message metadata time =
             , Encode.string message
             , Encode.string vtoken
             , Encode.string vapplication
-
-            -- FIXME update to work: , Encode.dict identity identity metadata
+            , Encode.dict identity Encode.string metadata
             ]
                 |> Encode.list identity
                 |> Encode.encode 0
