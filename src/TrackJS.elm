@@ -45,7 +45,7 @@ import Url.Builder
 import Uuid exposing (Uuid, uuidGenerator)
 
 
-{-| Pre-applied function with access token and application
+{-| Pre-applied function with access token, code version, application, and context.
 
 Create one using [`reporter`](#reporter).
 
@@ -55,10 +55,13 @@ type alias TrackJS =
     }
 
 
-{-| Return a [`TrackJS`](#TrackJS) record configured with the given
-[`Application`](#Application).
+{-| Return a [`TrackJS`](#TrackJS) record configured with the supplied values.
 
-Requests to TrackJS are subject to two limits:
+Once you have a `TrackJS` value you can use it to send a report:
+
+  - TODO: re-add example
+
+_Note:_ Requests to TrackJS are subject to two limits:
 
 1.  The total payload should be less than 100 kB
 2.  They should not exceed the [Capture Throttle](https://docs.trackjs.com/data-management/limits/#capture-throttle)
@@ -71,9 +74,6 @@ If you exceed the rate limit, these will show as "Dropped" in your
 [usage statistics](https://my.trackjs.com/usage), and will not error, so
 unfortuntaely we cannot reliably retry throttled requests.
 Please read the TrackJS documentation for more details.
-
-  - FIXME: Can we do better re. 413 Payload Too Large?
-  - TODO: re-add example
 
 -}
 reporter : Token -> CodeVersion -> Application -> Context -> TrackJS
@@ -150,7 +150,9 @@ application =
 
 
 {-| Optional context to send to TrackJS.
-Use `emptyContext` if you don't have or want to provide this information.
+
+Use `emptyContext` if you don't have or want to provide this information,
+although you will get more value from TrackJS if you do.
 
 These values are used primarily for the `environment` field in the TrackJS
 schema, the documentation for which suggests these values should be:
@@ -162,6 +164,12 @@ schema, the documentation for which suggests these values should be:
   - `referrer`: Referrer URL to this document.
   - `userAgent`: Browser User Agent string.
   - `viewport`: Visitor viewport height and width.
+
+_Note:_ TrackJS silently drops reports which do not match its schema, and the
+documentation on the schema is not very precise. So if you provide "strange"
+values here, your reports may be silently dropped. Only limited experimentation
+was done to ensure this library works, please open an issue if you have
+questions or useful information.
 
 -}
 type alias Context =
