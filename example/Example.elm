@@ -5,26 +5,29 @@ import Dict
 import Html exposing (..)
 import Html.Attributes exposing (value)
 import Html.Events exposing (onClick, onInput)
-import Json.Encode
-import Rollbar exposing (Rollbar)
 import Task
+import Time
+import TrackJS exposing (TrackJS)
 
 
 token : String
 token =
-    -- This is a demo token provide by Rollbar for its demo user
-    -- You view and verify the result by visiting https://rollbar.com/demo/demo/
-    -- This will log you in as the demo user, if you are not already logged in.
-    "3cda8fbafbfe4a6599d1954b1f1a246e"
+    -- NOTE: TrackJS does not seem to have a demo token, so you need to use a valid one.
+    -- Please make sure to create the application in TrackJS before you try this example.
+    Debug.todo "00000000000000000000000000000000"
 
 
-rollbar : Rollbar
-rollbar =
-    Rollbar.scoped
-        (Rollbar.token token)
-        (Rollbar.codeVersion "0.0.1")
-        (Rollbar.environment "test")
-        "Example"
+trackJsWithStartTime : Maybe Time.Posix -> TrackJS
+trackJsWithStartTime time =
+    let
+        context =
+            TrackJS.emptyContext
+    in
+    TrackJS.reporter
+        (TrackJS.token token)
+        (TrackJS.codeVersion "0.0.1")
+        (TrackJS.application "elm-trackjs-example")
+        { context | startTime = time }
 
 
 
@@ -33,12 +36,14 @@ rollbar =
 
 type alias Model =
     { report : String
+    , trackJS : TrackJS
     }
 
 
 initialModel : Model
 initialModel =
-    { report = ""
+    { report = "Example report"
+    , trackJS = trackJsWithStartTime Nothing
     }
 
 
@@ -47,32 +52,35 @@ initialModel =
 
 
 type Msg
-    = SetText String
-    | NoOp
+    = StartTime Time.Posix
+    | SetText String
     | Send
+    | NoOp
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        NoOp ->
-            ( model, Cmd.none )
+        StartTime time ->
+            ( { model | trackJS = trackJsWithStartTime (Just time) }, Cmd.none )
 
         SetText text ->
             ( { model | report = text }, Cmd.none )
 
         Send ->
-            ( model, info model.report )
+            ( model, report model.trackJS model.report )
+
+        NoOp ->
+            ( model, Cmd.none )
 
 
-info : String -> Cmd Msg
-info report =
-    Task.attempt (\_ -> NoOp) (rollbar.info report Dict.empty)
-
-
-json : Json.Encode.Value
-json =
-    Json.Encode.object [ ( "environment", Json.Encode.string "test" ) ]
+report : TrackJS -> String -> Cmd Msg
+report trackJS message =
+    Task.attempt (\_ -> NoOp)
+        (trackJS.report
+            { message = message, url = "elm-trackjs-example/home", stackTrace = Nothing }
+            (Dict.singleton "eg-key" "eg-value")
+        )
 
 
 
@@ -83,7 +91,7 @@ view : Model -> Html Msg
 view model =
     div []
         [ input [ onInput SetText, value model.report ] []
-        , button [ onClick Send ] [ text "Send to rollbar" ]
+        , button [ onClick Send ] [ text "Send to TrackJS" ]
         ]
 
 
@@ -94,13 +102,13 @@ view model =
 main : Program () Model Msg
 main =
     Browser.document
-        { init = \_ -> init
-        , subscriptions = \_ -> Sub.none
+        { init = always init
+        , subscriptions = always Sub.none
         , update = update
-        , view = \model -> { title = "Example", body = [ view model ] }
+        , view = \model -> { title = "Elm TrackJS Example", body = [ view model ] }
         }
 
 
-init : ( Model, Cmd msg )
+init : ( Model, Cmd Msg )
 init =
-    ( initialModel, Cmd.none )
+    ( initialModel, Task.perform StartTime Time.now )

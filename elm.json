@@ -1,11 +1,11 @@
 {
     "type": "package",
-    "name": "NoRedInk/elm-rollbar",
-    "summary": "Send reports to Rollbar",
+    "name": "scrive/elm-trackjs",
+    "summary": "Send reports to TrackJS",
     "license": "BSD-3-Clause",
-    "version": "2.0.1",
+    "version": "3.10.4",
     "exposed-modules": [
-        "Rollbar"
+        "TrackJS"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {
@@ -14,7 +14,9 @@
         "elm/http": "2.0.0 <= v < 3.0.0",
         "elm/json": "1.0.0 <= v < 2.0.0",
         "elm/random": "1.0.0 <= v < 2.0.0",
-        "elm/time": "1.0.0 <= v < 2.0.0"
+        "elm/time": "1.0.0 <= v < 2.0.0",
+        "elm/url": "1.0.0 <= v < 2.0.0",
+        "rtfeldman/elm-iso8601-date-strings": "1.1.4 <= v < 2.0.0"
     },
     "test-dependencies": {}
 }
