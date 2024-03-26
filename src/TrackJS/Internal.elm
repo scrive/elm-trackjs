@@ -8,4 +8,4 @@ module TrackJS.Internal exposing (version)
 -}
 version : String
 version =
-    "1.0.0"
+    "3.10.4"

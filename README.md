@@ -5,8 +5,9 @@ intention of adapting it to work with TrackJS.
 
 TODOs:
 - [x] Add example implementation (will also function as a live test)
+- [-] Test that it works!
+- [ ] Add optional `Context` to include useful things
 - [ ] Figure out what to include in `customer` data, in particular, the various `id`s
-- [ ] Test that it works!
 - [ ] Add test for version staying in sync
 - [ ] Finish and check documentation
 - [ ] Publish!

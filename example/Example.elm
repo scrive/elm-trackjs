@@ -35,7 +35,7 @@ type alias Model =
 
 initialModel : Model
 initialModel =
-    { report = "elm-trackjs-test-error"
+    { report = "Example report"
     }
 
 
@@ -59,12 +59,12 @@ update msg model =
             ( { model | report = text }, Cmd.none )
 
         Send ->
-            ( model, error model.report )
+            ( model, info model.report )
 
 
-error : String -> Cmd Msg
-error report =
-    Task.attempt (\_ -> NoOp) (trackJs.error report (Dict.singleton "eg-key" "eg-value"))
+info : String -> Cmd Msg
+info report =
+    Task.attempt (\_ -> NoOp) (trackJs.info report (Dict.singleton "eg-key" "eg-value"))
 
 
 
