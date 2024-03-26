@@ -4,7 +4,7 @@ module TrackJS.Internal exposing (version)
 -}
 
 
-{-| Use tests to ensure this stays in sync with the version in elm.json!
+{-| TODO Use tests to ensure this stays in sync with the version in elm.json!
 -}
 version : String
 version =
