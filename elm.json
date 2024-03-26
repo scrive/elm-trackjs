@@ -3,7 +3,7 @@
     "name": "scrive/elm-trackjs",
     "summary": "Send reports to TrackJS",
     "license": "BSD-3-Clause",
-    "version": "1.0.0",
+    "version": "3.10.4",
     "exposed-modules": [
         "TrackJS"
     ],

@@ -4,7 +4,8 @@ module TrackJS.Internal exposing (version)
 -}
 
 
-{-| TODO Use tests to ensure this stays in sync with the version in elm.json!
+{-| Mirrors the version of https://www.npmjs.com/package/trackjs and tested to work
+_Note:_ Basic CI test ensures this stays in sync with the version in elm.json!
 -}
 version : String
 version =
