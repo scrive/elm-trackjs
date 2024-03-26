@@ -22,6 +22,7 @@ trackJs =
         (TrackJS.token token)
         (TrackJS.codeVersion "0.0.1")
         (TrackJS.application "elm-trackjs-example")
+        TrackJS.emptyContext
 
 
 

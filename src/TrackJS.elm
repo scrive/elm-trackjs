@@ -1,6 +1,7 @@
 module TrackJS exposing
     ( TrackJS, scoped
     , Token, token, CodeVersion, codeVersion, Application, application
+    , Context, emptyContext
     , send, Level(..)
     )
 
@@ -15,6 +16,7 @@ module TrackJS exposing
 ### Types
 
 @docs Token, token, CodeVersion, codeVersion, Application, application
+@docs Context, emptyContext
 
 
 ## Low-level
@@ -34,6 +36,7 @@ import Random
 import Task exposing (Task)
 import Time exposing (Posix)
 import TrackJS.Internal
+import Url
 import Url.Builder
 import Uuid exposing (Uuid, uuidGenerator)
 
@@ -74,13 +77,13 @@ Please read the TrackJS documentation for more details.
   - TODO: re-add example
 
 -}
-scoped : Token -> CodeVersion -> Application -> TrackJS
-scoped vtoken vcodeVersion vapplication =
-    { error = send vtoken vcodeVersion vapplication Error
-    , warning = send vtoken vcodeVersion vapplication Warning
-    , info = send vtoken vcodeVersion vapplication Info
-    , debug = send vtoken vcodeVersion vapplication Debug
-    , log = send vtoken vcodeVersion vapplication Debug
+scoped : Token -> CodeVersion -> Application -> Context -> TrackJS
+scoped vtoken vcodeVersion vapplication context =
+    { error = send vtoken vcodeVersion vapplication context Error
+    , warning = send vtoken vcodeVersion vapplication context Warning
+    , info = send vtoken vcodeVersion vapplication context Info
+    , debug = send vtoken vcodeVersion vapplication context Debug
+    , log = send vtoken vcodeVersion vapplication context Log
     }
 
 
@@ -151,6 +154,50 @@ application =
     Application
 
 
+{-| Optional context to send to TrackJS.
+Use `emptyContext` if you don't have or want to provide this information.
+
+These values are used primarily for the `environment` field in the TrackJS
+schema, the documentation for which suggests these values should be:
+
+  - `sessionId`: Customer-generated Id for the current browser session.
+  - `userId`: Customer-generated Id for the current user.
+  - `startTime`: Used to compute the `age`: Time elapsed from the page load until the error in milliseconds.
+  - `originalUrl`: URL of the document when the page loaded.
+  - `referrer`: Referrer URL to this document.
+  - `userAgent`: Browser User Agent string.
+  - `viewport`: Visitor viewport height and width.
+
+-}
+type alias Context =
+    { sessionId : String
+    , userId : String
+    , startTime : Maybe Posix
+    , originalUrl : String
+    , referrer : String
+    , userAgent : String
+    , viewport : { h : Int, w : Int }
+    }
+
+
+{-| A default empty [`Context`](#Context).
+
+Uses empty strings and `0` values as default, which TrackJS accepts, excepts
+for `userAgent` which is set to `"unknown"`.
+
+-}
+emptyContext : Context
+emptyContext =
+    { sessionId = ""
+    , userId = ""
+    , startTime = Nothing
+    , originalUrl = ""
+    , referrer = ""
+    , userAgent = "unknown"
+    , viewport = { h = 0, w = 0 }
+    }
+
+
 {-| Send a message to TrackJS. [`scoped`](#scoped)
 provides a nice wrapper around this.
 
@@ -171,10 +218,10 @@ responsible (however note that [TrackJS always responds](https://docs.trackjs.co
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Application -> Level -> String -> Dict String String -> Task Http.Error Uuid
-send vtoken vcodeVersion vapplication level message metadata =
+send : Token -> CodeVersion -> Application -> Context -> Level -> String -> Dict String String -> Task Http.Error Uuid
+send vtoken vcodeVersion vapplication context level message metadata =
     Time.now
-        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication level message metadata)
+        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication context level message metadata)
 
 
 {-| Severity levels.
@@ -210,8 +257,8 @@ levelToString report =
             "log"
 
 
-sendWithTime : Token -> CodeVersion -> Application -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
-sendWithTime (Token vtoken) vcodeVersion vapplication level message metadata time =
+sendWithTime : Token -> CodeVersion -> Application -> Context -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
+sendWithTime (Token vtoken) vcodeVersion vapplication context level message metadata time =
     let
         uuid : Uuid
         uuid =
@@ -219,7 +266,7 @@ sendWithTime (Token vtoken) vcodeVersion vapplication level message metadata tim
 
         body : Http.Body
         body =
-            toJsonBody (Token vtoken) vcodeVersion vapplication level message uuid metadata time
+            toJsonBody (Token vtoken) vcodeVersion vapplication context level message uuid metadata time
     in
     -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
@@ -276,8 +323,8 @@ uuidFrom (Token vtoken) (Application vapplication) level message metadata time =
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> CodeVersion -> Application -> Level -> String -> Uuid -> Dict String String -> Posix -> Http.Body
-toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) level message uuid metadata time =
+toJsonBody : Token -> CodeVersion -> Application -> Context -> Level -> String -> Uuid -> Dict String String -> Posix -> Http.Body
+toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context level message uuid metadata time =
     -- The source platform of the capture. Typically "browser" or "node". {String}
     [ ( "agentPlatform", Encode.string "browser-elm" )
 
@@ -315,15 +362,13 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
             , ( "correlationId", Uuid.encode uuid )
 
             -- Customer-generated Id for the current browser session. {String}
-            -- TODO sessionId? How is it different?
-            , ( "sessionId", Encode.string "" )
+            , ( "sessionId", Encode.string context.sessionId )
 
             -- Your account token, generated by TrackJS. {String}
             , ( "token", Encode.string vtoken )
 
             -- Customer-generated Id for the current user. {String}
-            -- TODO userId?
-            , ( "userId", Encode.string "" )
+            , ( "userId", Encode.string context.userId )
 
             -- Customer-generated Id for the current application version. {String}
             , ( "version", Encode.string vcodeVersion )
@@ -333,22 +378,41 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
     -- Entry point of the error. {String:"ajax","direct","catch","console","window"}
     , ( "entry", Encode.string "direct" )
 
-    -- SKIPPED: environment
-    -- TODO include some info via Context?
+    -- environment: we use Context, as "environment" may be misleading (e.g. prod)
     , ( "environment"
       , Encode.object
-            [ ( "age", Encode.int 0 )
+            [ -- Time elapsed from the page load until the error in milliseconds. {Number}
+              ( "age"
+              , Encode.int <|
+                    case context.startTime of
+                        Nothing ->
+                            0
+
+                        Just t0 ->
+                            Time.posixToMillis time - Time.posixToMillis t0
+              )
+
+            -- SKIPPED: List of other libraries in the document.
             , ( "dependencies", Encode.object [] )
-            , ( "originalUrl", Encode.string "" )
-            , ( "referrer", Encode.string "" )
-            , ( "userAgent", Encode.string "elm-trackjs" )
-            , ( "viewportHeight", Encode.int 0 )
-            , ( "viewportWidth", Encode.int 0 )
+
+            -- URL of the document when the page loaded. {String URL}
+            , ( "originalUrl", Encode.string context.originalUrl )
+
+            -- Referrer URL to this document. {String URL}
+            , ( "referrer", Encode.string context.referrer )
+
+            -- Browser User Agent string. {String UserAgent}
+            , ( "userAgent", Encode.string context.userAgent )
+
+            -- Visitor viewport height. {Number}
+            , ( "viewportHeight", Encode.int context.viewport.h )
+
+            -- Visitor viewport width. {Number}
+            , ( "viewportWidth", Encode.int context.viewport.w )
             ]
       )
 
     -- SKIPPED: file: Filename originating the error. {String filename}
-
     -- Error message. {String}
     , ( "message", Encode.string message )
 
@@ -373,12 +437,12 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
     , ( "network", Encode.list (always Encode.null) [] )
 
     -- SKIPPED: URL of the document when the error occurred. {String URL}
-    -- TODO include some info via Context?
-    , ( "url", Encode.string "http://127.0.0.1:8080/elm-trackjs-example" )
+    -- TODO include some info via Scope?
+    , ( "url", Encode.string <| Url.percentEncode "TODO include something useful" )
 
     -- SKIPPED: Stack trace of the error. {String}
-    -- TODO include some info via Context?
-    , ( "stack", Encode.string "" )
+    -- TODO include some info via Scope?
+    , ( "stack", Encode.string "TODO include something useful" )
 
     -- SKIPPED: throttled: Number of errors that have been dropped by the agent throttles before this one. {Number}
     , ( "throttled", Encode.int 0 )
