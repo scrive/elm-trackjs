@@ -2,7 +2,7 @@ module TrackJS exposing
     ( TrackJS, scoped
     , Token, token, CodeVersion, codeVersion, Application, application
     , Context, emptyContext
-    , send, Level(..)
+    , send
     )
 
 {-| Send reports to TrackJS.
@@ -21,7 +21,7 @@ module TrackJS exposing
 
 ## Low-level
 
-@docs send, Level
+@docs send
 
 -}
 
@@ -41,18 +41,13 @@ import Url.Builder
 import Uuid exposing (Uuid, uuidGenerator)
 
 
-{-| Functions preapplied with access token and application, separated by
-[`Level`](#Level).
+{-| Pre-applied function with access token and application
 
 Create one using [`scoped`](#scoped).
 
 -}
 type alias TrackJS =
-    { error : String -> Dict String String -> Task Http.Error Uuid
-    , warning : String -> Dict String String -> Task Http.Error Uuid
-    , info : String -> Dict String String -> Task Http.Error Uuid
-    , debug : String -> Dict String String -> Task Http.Error Uuid
-    , log : String -> Dict String String -> Task Http.Error Uuid
+    { report : String -> Dict String String -> Task Http.Error Uuid
     }
 
 
@@ -73,17 +68,14 @@ If you exceed the rate limit, these will show as "Dropped" in your
 unfortuntaely we cannot reliably retry throttled requests.
 Please read the TrackJS documentation for more details.
 
+  - TODO: `scoped` suggests a Scope! Either rename or add it!
   - FIXME: Can we do better re. 413 Payload Too Large?
   - TODO: re-add example
 
 -}
 scoped : Token -> CodeVersion -> Application -> Context -> TrackJS
 scoped vtoken vcodeVersion vapplication context =
-    { error = send vtoken vcodeVersion vapplication context Error
-    , warning = send vtoken vcodeVersion vapplication context Warning
-    , info = send vtoken vcodeVersion vapplication context Info
-    , debug = send vtoken vcodeVersion vapplication context Debug
-    , log = send vtoken vcodeVersion vapplication context Log
+    { report = send vtoken vcodeVersion vapplication context
     }
 
 
@@ -206,7 +198,7 @@ Arguments:
   - `Token` - The [TrackJS token](https://docs.trackjs.com/data-api/capture/#token) required to identify your account.
   - `CodeVersion` - A version for your current application.
   - `Application` - Registered in [TrackJS](https://my.trackjs.com/Account/Applications)
-  - `Level` - severity, e.g. `Error`, `Warning`, `Info`
+  - `Context` - TODO documentation
   - `String` - message, e.g. "Auth server was down when user tried to sign in."
   - `Dict String String` - arbitrary metadata key-value pairs
 
@@ -218,55 +210,22 @@ responsible (however note that [TrackJS always responds](https://docs.trackjs.co
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Application -> Context -> Level -> String -> Dict String String -> Task Http.Error Uuid
-send vtoken vcodeVersion vapplication context level message metadata =
+send : Token -> CodeVersion -> Application -> Context -> String -> Dict String String -> Task Http.Error Uuid
+send vtoken vcodeVersion vapplication context message metadata =
     Time.now
-        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication context level message metadata)
+        |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication context message metadata)
 
 
-{-| Severity levels.
--}
-type Level
-    = Error
-    | Warning
-    | Info
-    | Debug
-    | Log
-
-
-
--- INTERNAL --
-
-
-levelToString : Level -> String
-levelToString report =
-    case report of
-        Error ->
-            "error"
-
-        Warning ->
-            "warn"
-
-        Info ->
-            "info"
-
-        Debug ->
-            "debug"
-
-        Log ->
-            "log"
-
-
-sendWithTime : Token -> CodeVersion -> Application -> Context -> Level -> String -> Dict String String -> Posix -> Task Http.Error Uuid
-sendWithTime (Token vtoken) vcodeVersion vapplication context level message metadata time =
+sendWithTime : Token -> CodeVersion -> Application -> Context -> String -> Dict String String -> Posix -> Task Http.Error Uuid
+sendWithTime (Token vtoken) vcodeVersion vapplication context message metadata time =
     let
         uuid : Uuid
         uuid =
-            uuidFrom (Token vtoken) vapplication level message metadata time
+            uuidFrom (Token vtoken) vapplication message metadata time
 
         body : Http.Body
         body =
-            toJsonBody (Token vtoken) vcodeVersion vapplication context level message uuid metadata time
+            toJsonBody (Token vtoken) vcodeVersion vapplication context message uuid metadata time
     in
     -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
@@ -295,16 +254,15 @@ only way we could expect the same UUID is if we were sending a duplicate
 message.
 
 -}
-uuidFrom : Token -> Application -> Level -> String -> Dict String String -> Posix -> Uuid
-uuidFrom (Token vtoken) (Application vapplication) level message metadata time =
+uuidFrom : Token -> Application -> String -> Dict String String -> Posix -> Uuid
+uuidFrom (Token vtoken) (Application vapplication) message metadata time =
     let
         ms =
             Time.posixToMillis time
 
         hash : Int
         hash =
-            [ Encode.string (levelToString level)
-            , Encode.string message
+            [ Encode.string message
             , Encode.string vtoken
             , Encode.string vapplication
             , Encode.dict identity Encode.string metadata
@@ -323,8 +281,8 @@ uuidFrom (Token vtoken) (Application vapplication) level message metadata time =
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> CodeVersion -> Application -> Context -> Level -> String -> Uuid -> Dict String String -> Posix -> Http.Body
-toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context level message uuid metadata time =
+toJsonBody : Token -> CodeVersion -> Application -> Context -> String -> Uuid -> Dict String String -> Posix -> Http.Body
+toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context message uuid metadata time =
     -- The source platform of the capture. Typically "browser" or "node". {String}
     [ ( "agentPlatform", Encode.string "browser-elm" )
 
@@ -337,20 +295,8 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
     -- SKIPPED: Timestamp when the "bindStack" was generated. {ISO 8601 String}
     , ( "bindTime", Encode.null )
 
-    -- Console Telemetry events. {Array[Object]}
-    , ( "console"
-      , Encode.list Encode.object
-            [ -- Formatted console message string. {String}
-              [ ( "message", Encode.string message )
-
-              -- Severity of the console event. {String:"log","debug","info","warn","error"}
-              , ( "severity", Encode.string (levelToString level) )
-
-              -- Timestamp of the console event. {String ISO 8601}
-              , ( "timestamp", Iso8601.encode time )
-              ]
-            ]
-      )
+    -- SKIPPED: Console Telemetry events. {Array[Object]}
+    , ( "console", Encode.list Encode.object [] )
     , ( "customer"
       , Encode.object
             -- Application key. Generated this in your TrackJS Dashboard. {String}

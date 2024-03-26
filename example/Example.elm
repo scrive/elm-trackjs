@@ -60,12 +60,12 @@ update msg model =
             ( { model | report = text }, Cmd.none )
 
         Send ->
-            ( model, info model.report )
+            ( model, report model.report )
 
 
-info : String -> Cmd Msg
-info report =
-    Task.attempt (\_ -> NoOp) (trackJs.info report (Dict.singleton "eg-key" "eg-value"))
+report : String -> Cmd Msg
+report message =
+    Task.attempt (\_ -> NoOp) (trackJs.report message (Dict.singleton "eg-key" "eg-value"))
 
 
 

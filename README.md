@@ -7,14 +7,15 @@ TODOs:
 - [x] Add example implementation (will also function as a live test)
 - [x] Test that it works!
 - [x] Add optional `Context` to include useful things
-- [ ] Get rid of console and levels: does not seem very useful for TrackJS
+- [x] Get rid of console and levels: does not seem very useful for TrackJS
+- [ ] Add `Scope` to include `url` and "stack trace", anything else?
 - [ ] Figure out what to include in `customer` data, in particular, the various `id`s
 - [ ] Add test for version staying in sync
 - [ ] Finish and check documentation
 - [ ] Publish!
 
 Possible extra features not currently implemented:
-- Optional `url` information
+- Optional `console` events
 - Optional `network` telemetry information
 - Explore how maximum payload size and HTTP 413 response can be handled
   (without encumbering the API)
