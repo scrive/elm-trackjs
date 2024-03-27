@@ -51,7 +51,7 @@ Create one using [`reporter`](#reporter).
 
 -}
 type alias TrackJS =
-    { report : Report -> Dict String String -> Task Http.Error Uuid
+    { report : Report -> Dict String String -> Task Http.Error ()
     }
 
 
@@ -232,29 +232,25 @@ Arguments:
   - `Dict String String` - arbitrary metadata key-value pairs
 
 If the message was successfully sent to TrackJS, the [`Task`](http://package.elm-lang.org/packages/elm-lang/core/latest/Task#Task)
-succeeds with the [`Uuid`](http://package.elm-lang.org/packages/danyx23/elm-uuid/latest/Uuid#Uuid)
-it generated and sent to TrackJS to identify the message. Otherwise it fails
-with the [`Http.Error`](http://package.elm-lang.org/packages/elm-lang/http/latest/Http#Error)
+succeeds.
+Otherwise it fails with the
+[`Http.Error`](http://package.elm-lang.org/packages/elm-lang/http/latest/Http#Error)
 responsible (however note that [TrackJS always responds](https://docs.trackjs.com/data-api/capture/)
 with `200 OK` or `202 ACCEPTED`).
 
 -}
-send : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Task Http.Error Uuid
+send : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Task Http.Error ()
 send vtoken vcodeVersion vapplication context report metadata =
     Time.now
         |> Task.andThen (sendWithTime vtoken vcodeVersion vapplication context report metadata)
 
 
-sendWithTime : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Posix -> Task Http.Error Uuid
+sendWithTime : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Posix -> Task Http.Error ()
 sendWithTime (Token vtoken) vcodeVersion vapplication context report metadata time =
     let
-        uuid : Uuid
-        uuid =
-            uuidFrom (Token vtoken) vapplication report.message metadata time
-
         body : Http.Body
         body =
-            toJsonBody (Token vtoken) vcodeVersion vapplication context report uuid metadata time
+            toJsonBody (Token vtoken) vcodeVersion vapplication context report metadata time
     in
     -- POST https://capture.trackjs.com/capture?token={TOKEN}&v={AGENT_VERSION}
     { method = "POST"
@@ -266,52 +262,84 @@ sendWithTime (Token vtoken) vcodeVersion vapplication context report metadata ti
             , Url.Builder.string "v" TrackJS.Internal.version
             ]
     , body = body
-    , resolver = Http.stringResolver (\_ -> Ok ()) -- TODO
+    , resolver =
+        Http.stringResolver
+            (\response ->
+                case response of
+                    Http.BadUrl_ url ->
+                        Err <| Http.BadUrl url
+
+                    Http.Timeout_ ->
+                        Err Http.Timeout
+
+                    Http.NetworkError_ ->
+                        Err Http.NetworkError
+
+                    Http.BadStatus_ meta _ ->
+                        Err <| Http.BadStatus meta.statusCode
+
+                    Http.GoodStatus_ _ _ ->
+                        Ok ()
+            )
     , timeout = Nothing
     }
         |> Http.task
-        |> Task.map (\() -> uuid)
 
 
-{-| Using the current system time as a random number seed generator, generate a
-UUID.
-
-We could theoretically generate the same UUID twice if we tried to send
-two messages in extremely rapid succession. To guard against this, we
-incorporate the contents of the message in the random number seed so that the
-only way we could expect the same UUID is if we were sending a duplicate
-message.
-
+{-| Tries to generate a correlationId that might be unique to the current
+"user", in the vague sense of a browser tab session, by using various bits of
+information.
 -}
-uuidFrom : Token -> Application -> String -> Dict String String -> Posix -> Uuid
-uuidFrom (Token vtoken) (Application vapplication) message metadata time =
+correlationIdFrom : CodeVersion -> Context -> Report -> Posix -> Uuid
+correlationIdFrom (CodeVersion vcodeVersion) context report time =
     let
-        ms =
-            Time.posixToMillis time
+        ( itemsToHash, seed ) =
+            if context == emptyContext then
+                -- If the context is empty, there's no easy way to identify a
+                -- user, so use the code version and report as hash items,
+                -- with the current time as seed, to generate a semi-unique
+                -- hash
+                ( [ Encode.string vcodeVersion
+                  , Encode.string report.message
+                  , Encode.string report.url
+                  , Encode.string <| Maybe.withDefault "" report.stackTrace
+                  ]
+                , Time.posixToMillis time
+                )
+
+            else
+                -- Otherwise use the context information in the hash items,
+                -- which should be relatively stable for a user, and the user's
+                -- `startTime` as a seed (if possible) to try and correlate
+                -- errors
+                ( [ Encode.string vcodeVersion
+                  , Encode.string context.sessionId
+                  , Encode.string context.userId
+                  , Encode.string context.originalUrl
+                  , Encode.string context.referrer
+                  , Encode.string context.userAgent
+                  , Encode.int context.viewport.h
+                  , Encode.int context.viewport.w
+                  ]
+                , Maybe.withDefault 0 <| Maybe.map Time.posixToMillis context.startTime
+                )
 
         hash : Int
         hash =
-            [ Encode.string message
-            , Encode.string vtoken
-            , Encode.string vapplication
-            , Encode.dict identity Encode.string metadata
-            ]
+            itemsToHash
                 |> Encode.list identity
                 |> Encode.encode 0
-                |> Murmur3.hashString ms
-
-        combinedSeed =
-            Bitwise.xor (floor (ms |> toFloat)) hash
+                |> Murmur3.hashString seed
     in
-    Random.initialSeed combinedSeed
+    Random.initialSeed hash
         |> Random.step uuidGenerator
         |> Tuple.first
 
 
 {-| See <https://docs.trackjs.com/data-api/capture/#request-payload> for schema
 -}
-toJsonBody : Token -> CodeVersion -> Application -> Context -> Report -> Uuid -> Dict String String -> Posix -> Http.Body
-toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context report uuid metadata time =
+toJsonBody : Token -> CodeVersion -> Application -> Context -> Report -> Dict String String -> Posix -> Http.Body
+toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) context report metadata time =
     -- The source platform of the capture. Typically "browser" or "node". {String}
     [ ( "agentPlatform", Encode.string "browser-elm" )
 
@@ -332,9 +360,10 @@ toJsonBody (Token vtoken) (CodeVersion vcodeVersion) (Application vapplication) 
             [ ( "application", Encode.string vapplication )
 
             -- Auto-generated ID for matching visitor to multiple errors. {String}
-            -- FIXME seems like this should not be the error UUID but per user session
-            -- FIXME maybe generate UUID on less info so it groups errors?
-            , ( "correlationId", Uuid.encode uuid )
+            , ( "correlationId"
+              , Uuid.encode <|
+                    correlationIdFrom (CodeVersion vcodeVersion) context report time
+              )
 
             -- Customer-generated Id for the current browser session. {String}
             , ( "sessionId", Encode.string context.sessionId )

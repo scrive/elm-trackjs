@@ -17,8 +17,8 @@ token =
     Debug.todo "00000000000000000000000000000000"
 
 
-trackJsWithStartTime : Maybe Time.Posix -> TrackJS
-trackJsWithStartTime time =
+trackJSReporter : Maybe Time.Posix -> TrackJS
+trackJSReporter time =
     let
         context =
             TrackJS.emptyContext
@@ -43,7 +43,7 @@ type alias Model =
 initialModel : Model
 initialModel =
     { report = "Example report"
-    , trackJS = trackJsWithStartTime Nothing
+    , trackJS = trackJSReporter Nothing
     }
 
 
@@ -62,7 +62,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         StartTime time ->
-            ( { model | trackJS = trackJsWithStartTime (Just time) }, Cmd.none )
+            ( { model | trackJS = trackJSReporter (Just time) }, Cmd.none )
 
         SetText text ->
             ( { model | report = text }, Cmd.none )
