@@ -262,7 +262,25 @@ sendWithTime (Token vtoken) vcodeVersion vapplication context report metadata ti
             , Url.Builder.string "v" TrackJS.Internal.version
             ]
     , body = body
-    , resolver = Http.stringResolver (\_ -> Ok ()) -- TODO
+    , resolver =
+        Http.stringResolver
+            (\response ->
+                case response of
+                    Http.BadUrl_ url ->
+                        Err <| Http.BadUrl url
+
+                    Http.Timeout_ ->
+                        Err Http.Timeout
+
+                    Http.NetworkError_ ->
+                        Err Http.NetworkError
+
+                    Http.BadStatus_ meta _ ->
+                        Err <| Http.BadStatus meta.statusCode
+
+                    Http.GoodStatus_ _ _ ->
+                        Ok ()
+            )
     , timeout = Nothing
     }
         |> Http.task
